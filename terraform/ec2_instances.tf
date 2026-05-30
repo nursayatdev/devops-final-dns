@@ -14,12 +14,18 @@ data "aws_ami" "ubuntu" {
   }
 }
 
+# Create key pair dynamically from the derived public key passed during the workflow run
+resource "aws_key_pair" "devops_key" {
+  key_name   = var.key_name
+  public_key = var.ssh_public_key
+}
+
 # 1. Bastion Host - Placed in the Public Subnet with Public IP
 resource "aws_instance" "bastion" {
   ami                         = data.aws_ami.ubuntu.id
   instance_type               = var.instance_type
   subnet_id                   = aws_subnet.public.id
-  key_name                    = var.key_name
+  key_name                    = aws_key_pair.devops_key.key_name
   vpc_security_group_ids      = [aws_security_group.bastion_sg.id]
   associate_public_ip_address = true
 
@@ -33,7 +39,7 @@ resource "aws_instance" "ns1" {
   ami                    = data.aws_ami.ubuntu.id
   instance_type          = var.instance_type
   subnet_id              = aws_subnet.private.id
-  key_name               = var.key_name
+  key_name               = aws_key_pair.devops_key.key_name
   vpc_security_group_ids = [aws_security_group.private_sg.id]
 
   tags = {
@@ -46,7 +52,7 @@ resource "aws_instance" "ns2" {
   ami                    = data.aws_ami.ubuntu.id
   instance_type          = var.instance_type
   subnet_id              = aws_subnet.private.id
-  key_name               = var.key_name
+  key_name               = aws_key_pair.devops_key.key_name
   vpc_security_group_ids = [aws_security_group.private_sg.id]
 
   tags = {
@@ -59,7 +65,7 @@ resource "aws_instance" "host1" {
   ami                    = data.aws_ami.ubuntu.id
   instance_type          = var.instance_type
   subnet_id              = aws_subnet.private.id
-  key_name               = var.key_name
+  key_name               = aws_key_pair.devops_key.key_name
   vpc_security_group_ids = [aws_security_group.private_sg.id]
 
   tags = {
@@ -72,7 +78,7 @@ resource "aws_instance" "host2" {
   ami                    = data.aws_ami.ubuntu.id
   instance_type          = var.instance_type
   subnet_id              = aws_subnet.private.id
-  key_name               = var.key_name
+  key_name               = aws_key_pair.devops_key.key_name
   vpc_security_group_ids = [aws_security_group.private_sg.id]
 
   tags = {

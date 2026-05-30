@@ -30,6 +30,13 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
 
+      - name: Generate SSH Public Key from Private Key Secret
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/devops-key.pem
+          chmod 600 ~/.ssh/devops-key.pem
+          ssh-keygen -y -f ~/.ssh/devops-key.pem > ~/.ssh/devops-key.pub
+
       - name: Terraform Init and Validate
         run: |
           cd terraform
@@ -39,6 +46,7 @@ jobs:
       - name: Terraform Plan
         run: |
           cd terraform
+          export TF_VAR_ssh_public_key="$(cat ~/.ssh/devops-key.pub)"
           terraform plan -out=tfplan
 
   terraform_apply:
@@ -62,6 +70,13 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
 
+      - name: Generate SSH Public Key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/devops-key.pem
+          chmod 600 ~/.ssh/devops-key.pem
+          ssh-keygen -y -f ~/.ssh/devops-key.pem > ~/.ssh/devops-key.pub
+
       - name: Terraform Init
         run: |
           cd terraform
@@ -70,6 +85,7 @@ jobs:
       - name: Terraform Apply
         run: |
           cd terraform
+          export TF_VAR_ssh_public_key="$(cat ~/.ssh/devops-key.pub)"
           terraform apply -auto-approve
 
       - name: Generate Ansible Inventory

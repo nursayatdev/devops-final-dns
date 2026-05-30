@@ -34,6 +34,11 @@ variable "key_name" {
   default     = "devops-key"
 }
 
+variable "ssh_public_key" {
+  type        = string
+  description = "The public key material to register in AWS for SSH access"
+}
+
 variable "instance_type" {
   type        = string
   description = "EC2 instance size for the project virtual machines"
