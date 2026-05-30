@@ -13,6 +13,15 @@ resource "aws_security_group" "bastion_sg" {
     cidr_blocks = [var.allowed_ssh_cidr]
   }
 
+  # Allow inbound Tinyproxy requests from the private instances within the VPC
+  ingress {
+    description = "Allow Tinyproxy access from VPC CIDR"
+    from_port   = 8888
+    to_port     = 8888
+    protocol    = "tcp"
+    cidr_blocks = [var.vpc_cidr]
+  }
+
   # Allow all outbound traffic
   egress {
     description = "Allow all outbound traffic"
