@@ -42,5 +42,5 @@ variable "ssh_public_key" {
 variable "instance_type" {
   type        = string
   description = "EC2 instance size for the project virtual machines"
-  default     = "t2.micro"
+  default     = "t3.micro"
 }
