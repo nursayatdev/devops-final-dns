@@ -1,0 +1,96 @@
+---
+# 1. Setup Tinyproxy on the Bastion Host first (since it has direct public internet)
+- name: Install and configure Tinyproxy on Bastion Host
+  hosts: bastion
+  become: true
+  tasks:
+    - name: Ensure apt package cache is updated on Bastion
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Install Tinyproxy on Bastion
+      apt:
+        name: tinyproxy
+        state: present
+
+    - name: Configure Tinyproxy to allow internal VPC subnet connections
+      lineinfile:
+        path: /etc/tinyproxy/tinyproxy.conf
+        regexp: '^Allow '
+        line: 'Allow 10.0.0.0/16'
+        state: present
+      notify: Restart Tinyproxy
+
+  handlers:
+    - name: Restart Tinyproxy
+      service:
+        name: tinyproxy
+        state: restarted
+        enabled: yes
+
+# 2. Configure Apt Proxy on all private subnet instances before doing any apt updates
+- name: Configure internal apt proxy on private subnet hosts
+  hosts: private_subnet
+  become: true
+  tasks:
+    - name: Configure apt to use Bastion as an HTTP/HTTPS proxy
+      copy:
+        content: |
+          Acquire::http::Proxy "http://{{ hostvars['bastion_host']['bastion_private_ip'] }}:8888/";
+          Acquire::https::Proxy "http://{{ hostvars['bastion_host']['bastion_private_ip'] }}:8888/";
+        dest: /etc/apt/apt.conf.d/99proxy
+        owner: root
+        group: root
+        mode: '0644'
+
+# 3. Common configuration for all hosts (now that proxies are configured)
+- name: Common infrastructure setup and package updates
+  hosts: all
+  become: true
+  gather_facts: true
+  tasks:
+    - name: Ensure apt package cache is updated
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Install common utility packages
+      apt:
+        name:
+          - curl
+          - git
+          - unzip
+        state: present
+
+# 4. DNS Servers Configuration Play (Primary and Secondary)
+- name: Provision DNS server software on ns1 and ns2
+  hosts: dns_servers
+  become: true
+  tasks:
+    - name: Install Bind9 and DNS utility packages
+      apt:
+        name:
+          - bind9
+          - bind9utils
+          - dnsutils
+        state: present
+
+    - name: Verify Bind9 service is started and enabled
+      service:
+        name: bind9
+        state: started
+        enabled: yes
+
+# 5. Host Clients Configuration Play (host1 and host2)
+- name: Configure test client utility packages
+  hosts: clients
+  become: true
+  tasks:
+    - name: Install system network testing tools
+      apt:
+        name:
+          - dnsutils
+          - net-tools
+          - iputils-ping
+        state: present

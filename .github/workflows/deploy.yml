@@ -1,0 +1,172 @@
+name: Deploy DevOps Final Infrastructure and DNS
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+    branches:
+      - main
+      - master
+
+jobs:
+  validate_and_plan:
+    name: Terraform Validate and Plan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.5.0
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Terraform Init and Validate
+        run: |
+          cd terraform
+          terraform init
+          terraform validate
+
+      - name: Terraform Plan
+        run: |
+          cd terraform
+          terraform plan -out=tfplan
+
+  terraform_apply:
+    name: Terraform Apply & Generate Inventory
+    needs: validate_and_plan
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.5.0
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Terraform Init
+        run: |
+          cd terraform
+          terraform init
+
+      - name: Terraform Apply
+        run: |
+          cd terraform
+          terraform apply -auto-approve
+
+      - name: Generate Ansible Inventory
+        run: |
+          cd terraform
+          # Extract outputs from the applied TF state
+          BASTION_IP=$(terraform output -raw bastion_public_ip)
+          BASTION_PRIVATE_IP=$(terraform output -raw bastion_private_ip)
+          NS1_IP=$(terraform output -raw ns1_private_ip)
+          NS2_IP=$(terraform output -raw ns2_private_ip)
+          HOST1_IP=$(terraform output -raw host1_private_ip)
+          HOST2_IP=$(terraform output -raw host2_private_ip)
+          
+          # Export for template interpolation
+          export bastion_public_ip=$BASTION_IP
+          export bastion_private_ip=$BASTION_PRIVATE_IP
+          export ns1_private_ip=$NS1_IP
+          export ns2_private_ip=$NS2_IP
+          export host1_private_ip=$HOST1_IP
+          export host2_private_ip=$HOST2_IP
+          
+          envsubst < ../ansible/inventory.ini.tmpl > ../ansible/inventory.ini
+
+      - name: Upload Inventory Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ansible-inventory
+          path: ansible/inventory.ini
+
+  ansible_apply:
+    name: Run Ansible Playbooks
+    needs: terraform_apply
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Download Inventory Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ansible-inventory
+          path: ansible/
+
+      - name: Install Ansible
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ansible
+
+      - name: Setup SSH Key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/devops-key.pem
+          chmod 600 ~/.ssh/devops-key.pem
+
+      - name: Run Playbook
+        run: |
+          ansible-playbook -i ansible/inventory.ini ansible/site.yml
+
+  test:
+    name: Test DNS Resolution
+    needs: ansible_apply
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Download Inventory Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ansible-inventory
+          path: ansible/
+
+      - name: Setup SSH Key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/devops-key.pem
+          chmod 600 ~/.ssh/devops-key.pem
+
+      - name: Run DNS Resolution Tests
+        run: |
+          # Read IPs from the generated inventory
+          BASTION_IP=$(grep "bastion_host" ansible/inventory.ini | awk -F'=' '{print $2}' | awk '{print $1}')
+          HOST1_IP=$(grep "host1" ansible/inventory.ini | awk -F'=' '{print $2}' | awk '{print $1}')
+          HOST2_IP=$(grep "host2" ansible/inventory.ini | awk -F'=' '{print $2}' | awk '{print $1}')
+          
+          echo "Testing DNS resolution on Host Clients through Bastion..."
+          
+          # SSH into client host1 via Bastion ProxyJump to run local dig/nslookup queries
+          ssh -i ~/.ssh/devops-key.pem \
+            -o ProxyCommand="ssh -i ~/.ssh/devops-key.pem -o StrictHostKeyChecking=no -W %h:%p ubuntu@$BASTION_IP" \
+            -o StrictHostKeyChecking=no \
+            ubuntu@$HOST1_IP \
+            "echo '=== host1 testing ===' && dig +short ns1.example.com && nslookup host2.example.com"
+          
+          # SSH into client host2 via Bastion ProxyJump to run local dig/nslookup queries
+          ssh -i ~/.ssh/devops-key.pem \
+            -o ProxyCommand="ssh -i ~/.ssh/devops-key.pem -o StrictHostKeyChecking=no -W %h:%p ubuntu@$BASTION_IP" \
+            -o StrictHostKeyChecking=no \
+            ubuntu@$HOST2_IP \
+            "echo '=== host2 testing ===' && dig +short ns2.example.com && nslookup host1.example.com"

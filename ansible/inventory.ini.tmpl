@@ -1,0 +1,24 @@
+# Ansible inventory template - dynamic values will be injected post-deployment
+
+[bastion]
+bastion_host ansible_host=${bastion_public_ip} ansible_user=ubuntu bastion_private_ip=${bastion_private_ip}
+
+[dns_servers]
+ns1 ansible_host=${ns1_private_ip}
+ns2 ansible_host=${ns2_private_ip}
+
+[clients]
+host1 ansible_host=${host1_private_ip}
+host2 ansible_host=${host2_private_ip}
+
+[all:vars]
+ansible_ssh_private_key_file=~/.ssh/devops-key.pem
+
+[private_subnet:children]
+dns_servers
+clients
+
+[private_subnet:vars]
+ansible_user=ubuntu
+# Automatically proxy all SSH traffic to the private hosts through the public Bastion host
+ansible_ssh_common_args='-o ProxyCommand="ssh -W %h:%p -q ubuntu@${bastion_public_ip} -i ~/.ssh/devops-key.pem -o StrictHostKeyChecking=no" -o StrictHostKeyChecking=no'
