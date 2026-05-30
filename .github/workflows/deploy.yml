@@ -143,6 +143,8 @@ jobs:
           chmod 600 ~/.ssh/devops-key.pem
 
       - name: Run Playbook
+        env:
+          ANSIBLE_HOST_KEY_CHECKING: "False"
         run: |
           ansible-playbook -i ansible/inventory.ini ansible/site.yml
 
