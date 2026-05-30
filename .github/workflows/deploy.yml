@@ -47,6 +47,7 @@ jobs:
         run: |
           cd terraform
           export TF_VAR_ssh_public_key="$(cat ~/.ssh/devops-key.pub)"
+          export TF_VAR_key_name="devops-key-${{ github.run_id }}"
           terraform plan -out=tfplan
 
   terraform_apply:
@@ -86,6 +87,7 @@ jobs:
         run: |
           cd terraform
           export TF_VAR_ssh_public_key="$(cat ~/.ssh/devops-key.pub)"
+          export TF_VAR_key_name="devops-key-${{ github.run_id }}"
           terraform apply -auto-approve
 
       - name: Generate Ansible Inventory
